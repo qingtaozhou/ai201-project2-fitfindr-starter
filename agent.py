@@ -18,6 +18,8 @@ Usage (once implemented):
     print(result["error"])   # None on success
 """
 
+import re
+
 from tools import search_listings, suggest_outfit, create_fit_card
 
 
@@ -46,6 +48,68 @@ def _new_session(query: str, wardrobe: dict) -> dict:
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
+
+def _parse_query(query: str) -> dict:
+    """
+    Extract search parameters from a natural-language query.
+
+    This parser is intentionally deterministic: price and size are treated as
+    hard filters, while the remaining shopping phrase becomes the description.
+    """
+    text = query.strip()
+
+    price_match = re.search(
+        r"(?:under|below|less than|up to|maximum|max|budget)\s*\$?\s*(\d+(?:\.\d{1,2})?)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not price_match:
+        price_match = re.search(r"\$\s*(\d+(?:\.\d{1,2})?)", text)
+    max_price = float(price_match.group(1)) if price_match else None
+
+    size_match = re.search(
+        r"(?:in\s+)?size\s+([a-zA-Z0-9./-]+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    size = size_match.group(1).strip(".,!?") if size_match else None
+
+    description = text
+    if price_match:
+        description = (
+            description[: price_match.start()] + " " + description[price_match.end() :]
+        )
+    if size_match:
+        description = (
+            description[: size_match.start()] + " " + description[size_match.end() :]
+        )
+
+    split_markers = [
+        r"\bi mostly wear\b",
+        r"\bhow would i style\b",
+        r"\bwhat(?:'s| is) out there\b",
+        r"\bwhat would go with\b",
+    ]
+    for marker in split_markers:
+        split_match = re.search(marker, description, flags=re.IGNORECASE)
+        if split_match:
+            description = description[: split_match.start()]
+            break
+
+    description = re.sub(
+        r"\b(i'?m|i am|im|i|we|please|want|need|looking for|searching for|find me|show me|a|an)\b",
+        " ",
+        description,
+        flags=re.IGNORECASE,
+    )
+    description = re.sub(r"[$,.;!?]", " ", description)
+    description = re.sub(r"\s+", " ", description).strip()
+
+    return {
+        "description": description,
+        "size": size,
+        "max_price": max_price,
+    }
 
 def run_agent(query: str, wardrobe: dict) -> dict:
     """
@@ -92,9 +156,38 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     Before writing code, complete the Planning Loop and State Management sections
     of planning.md — your implementation should match what you described there.
     """
-    # TODO: implement the planning loop
     session = _new_session(query, wardrobe)
-    session["error"] = "Planning loop not yet implemented."
+
+    parsed = _parse_query(query)
+    session["parsed"] = parsed
+
+    results = search_listings(
+        description=parsed["description"],
+        size=parsed["size"],
+        max_price=parsed["max_price"],
+    )
+    session["search_results"] = results
+
+    if not results:
+        session["error"] = (
+            "No matching listings found. Try broadening the item description, "
+            "raising the budget, or removing the size filter."
+        )
+        return session
+
+    selected_item = results[0]
+    session["selected_item"] = selected_item
+
+    outfit_suggestion = suggest_outfit(selected_item, session["wardrobe"])
+    session["outfit_suggestion"] = outfit_suggestion
+
+    if not isinstance(outfit_suggestion, str) or not outfit_suggestion.strip():
+        session["error"] = (
+            "I found a listing, but couldn't create a usable outfit suggestion."
+        )
+        return session
+
+    session["fit_card"] = create_fit_card(outfit_suggestion, selected_item)
     return session
 
 
@@ -112,7 +205,12 @@ if __name__ == "__main__":
         print(f"Error: {session['error']}")
     else:
         print(f"Found: {session['selected_item']['title']}")
+        print(f"Selected item state id: {session['selected_item']['id']}")
         print(f"\nOutfit: {session['outfit_suggestion']}")
+        print(
+            "\nState check: create_fit_card received the outfit suggestion "
+            "stored in session['outfit_suggestion']."
+        )
         print(f"\nFit card: {session['fit_card']}")
 
     print("\n\n=== No-results path ===\n")
@@ -121,3 +219,4 @@ if __name__ == "__main__":
         wardrobe=get_example_wardrobe(),
     )
     print(f"Error message: {session2['error']}")
+    print(f"Fit card: {session2['fit_card']}")

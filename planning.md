@@ -133,17 +133,22 @@ For each tool, describe the specific failure mode you're handling and what the a
 ## A Complete Interaction (Step by Step)
 
 Write out what a full user interaction looks like from start to finish — tool call by tool call. Use a specific example query.
+FitFindr helps a user shop secondhand by first searching listings that match the requested item, size, budget, and style language, then styling the best match with pieces from the user's wardrobe, then turning the outfit into a short social-style fit card. `search_listings` is triggered by the user's shopping request; if it returns no matches, the agent explains what to broaden or change and stops instead of calling `suggest_outfit`. When a listing is found, `suggest_outfit` uses the selected item plus the wardrobe, and `create_fit_card` runs only after a usable outfit suggestion exists.
 
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
 
 **Step 1:**
 <!-- What does the agent do first? Which tool is called? With what input? -->
-
+The agent parses the shopping request and calls `search_listings(description="vintage graphic tee", size=None, max_price=30.0)`. The tool searches listing fields such as title, description, category, style_tags, size, condition, price, colors, brand, and platform, then returns matching listings sorted by relevance.
 **Step 2:**
 <!-- What happens next? What was returned from step 1? What tool is called now? -->
+The agent selects the top returned listing, such as "Graphic Tee — 2003 Tour Bootleg Style" for $24 on Depop, and stores it as `new_item`. It then calls `suggest_outfit(new_item=<selected listing>, wardrobe=<user wardrobe>)`, using wardrobe items like baggy jeans, chunky sneakers, boots, jackets, and accessories to build a cohesive look.
 
 **Step 3:**
 <!-- Continue until the full interaction is complete -->
+If `suggest_outfit` returns a usable outfit, the agent calls `create_fit_card(outfit=<outfit suggestion>, new_item=<selected listing>)`. This turns the listing and styling advice into a concise caption-style fit card that mentions the thrifted item, price, platform, and outfit vibe.
 
 **Final output to user:**
 <!-- What does the user actually see at the end? -->
+The user sees the best matching listing, a styling suggestion using their wardrobe, and a ready-to-post fit card. If no listings match the search, the user instead sees a helpful message suggesting changes like increasing the budget, removing the size filter, or broadening the style keywords, and the agent does not continue to outfit or fit-card generation.
+
